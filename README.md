@@ -1,36 +1,53 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Task CRUD API
 
-## Getting Started
+A small Next.js API with a SQLite-backed task list. The API exposes the same five CRUD operations while task data persists between server restarts.
 
-First, run the development server:
+## Run locally
+
+Requires Node.js 20 or newer.
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+The database is created automatically at `tasks.db` in the project root on the first task API request. The app creates the `tasks` table if it does not exist and inserts three example tasks only when the table is empty. The local database file is git-ignored, so a fresh clone starts with its own database.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+SQLite was chosen because it stores data in one local file, needs no separate database server or setup, and keeps data after the app stops.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## API
 
-## Learn More
+| Method | Path | Success | Behavior |
+| --- | --- | --- | --- |
+| GET | `/tasks` | 200 | Return all tasks as a JSON array |
+| GET | `/tasks/:id` | 200 | Return one task |
+| POST | `/tasks` | 201 | Create a task from `{ "title": "..." }` |
+| PUT | `/tasks/:id` | 200 | Replace a task using `{ "title": "...", "done": true }` |
+| DELETE | `/tasks/:id` | 204 | Delete a task with an empty response body |
 
-To learn more about Next.js, take a look at the following resources:
+Task objects have the shape `{ "id": 1, "title": "...", "done": false }`. Missing or empty titles and invalid update bodies return 400. Unknown task IDs return 404 with `{ "error": "Task not found" }`. All values supplied by requests are passed to prepared SQL statements as parameters.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+On Windows PowerShell, use `curl.exe` to avoid the `curl` alias. For example:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+curl.exe -i http://localhost:3000/tasks
+curl.exe -i http://localhost:3000/tasks/1
+curl.exe -i -X POST http://localhost:3000/tasks -H "Content-Type: application/json" -d "{\"title\":\"Write SQL\"}"
+curl.exe -i -X PUT http://localhost:3000/tasks/1 -H "Content-Type: application/json" -d "{\"title\":\"Write SQL\",\"done\":true}"
+curl.exe -i -X DELETE http://localhost:3000/tasks/1
+curl.exe -i http://localhost:3000/tasks/999
+```
 
-## Deploy on Vercel
+## Inspect SQLite
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Open `tasks.db` in [DB Browser for SQLite](https://sqlitebrowser.org/). The database file and the API use the same rows; changes made in DB Browser are visible through the API without restarting the server.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Example Stage 4 query:
+
+```sql
+SELECT id, title, done FROM tasks ORDER BY id;
+```
+
+This returns every stored task in ID order.
+
+**Database screenshot:** add a screenshot of `tasks.db` open in DB Browser for SQLite before submitting the assignment.

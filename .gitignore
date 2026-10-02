@@ -13,6 +13,9 @@
 # testing
 /coverage
 
+# local SQLite database
+/tasks.db
+
 # next.js
 /.next/
 /out/
