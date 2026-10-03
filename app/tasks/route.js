@@ -1,7 +1,7 @@
 import { createTask, listTasks } from '../lib/tasks.js';
 
 export async function GET() {
-  return Response.json(listTasks());
+  return Response.json(await listTasks());
 }
 
 export async function POST(request) {
@@ -16,5 +16,5 @@ export async function POST(request) {
     return Response.json({ error: 'Title is required' }, { status: 400 });
   }
 
-  return Response.json(createTask(body.title.trim()), { status: 201 });
+  return Response.json(await createTask(body.title.trim()), { status: 201 });
 }

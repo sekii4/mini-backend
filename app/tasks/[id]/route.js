@@ -14,7 +14,7 @@ export async function GET(_request, { params }) {
   const id = parseId(rawId);
   if (id === null) return notFound();
 
-  const task = findTask(id);
+  const task = await findTask(id);
   return task ? Response.json(task) : notFound();
 }
 
@@ -34,14 +34,14 @@ export async function PUT(request, { params }) {
     return Response.json({ error: 'Title and done are required' }, { status: 400 });
   }
 
-  const task = updateTask(id, body.title.trim(), body.done);
+  const task = await updateTask(id, body.title.trim(), body.done);
   return task ? Response.json(task) : notFound();
 }
 
 export async function DELETE(_request, { params }) {
   const { id: rawId } = await params;
   const id = parseId(rawId);
-  if (id === null || !deleteTask(id)) return notFound();
+  if (id === null || !(await deleteTask(id))) return notFound();
 
   return new Response(null, { status: 204 });
 }
