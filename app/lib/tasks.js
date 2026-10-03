@@ -1,51 +1,79 @@
-import Database from 'better-sqlite3';
-import path from 'node:path';
+import { Pool } from 'pg';
 
 const globalForDatabase = globalThis;
-const database = globalForDatabase.taskDatabase ?? new Database(path.join(process.cwd(), 'tasks.db'));
-globalForDatabase.taskDatabase = database;
+const pool = globalForDatabase.taskPool ?? new Pool({ connectionString: process.env.DATABASE_URL });
+globalForDatabase.taskPool = pool;
 
-database.exec(`
-  CREATE TABLE IF NOT EXISTS tasks (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    title TEXT NOT NULL,
-    done INTEGER NOT NULL DEFAULT 0 CHECK (done IN (0, 1))
-  )
-`);
+const seedTasks = ['Learn PostgreSQL', 'Connect the API', 'Verify persistence'];
 
-const taskCount = database.prepare('SELECT COUNT(*) AS count FROM tasks').get().count;
-if (taskCount === 0) {
-  const insertSeed = database.prepare('INSERT INTO tasks (title, done) VALUES (?, ?)');
-  database.transaction(() => {
-    for (const title of ['Learn SQLite', 'Connect the API', 'Verify persistence']) {
-      insertSeed.run(title, 0);
+async function initializeDatabase() {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('SELECT pg_advisory_xact_lock($1)', [741025]);
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS tasks (
+        id SERIAL PRIMARY KEY,
+        title TEXT NOT NULL,
+        done BOOLEAN NOT NULL DEFAULT FALSE
+      )
+    `);
+
+    const { rows } = await client.query('SELECT COUNT(*)::int AS count FROM tasks');
+    if (rows[0].count === 0) {
+      for (const title of seedTasks) {
+        await client.query('INSERT INTO tasks (title, done) VALUES ($1, $2)', [title, false]);
+      }
     }
-  })();
+
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
-const taskFromRow = (row) => (row ? { ...row, done: Boolean(row.done) } : null);
-
-export function listTasks() {
-  return database.prepare('SELECT id, title, done FROM tasks ORDER BY id').all().map(taskFromRow);
+async function ensureDatabase() {
+  if (!globalForDatabase.taskDatabaseReady) {
+    globalForDatabase.taskDatabaseReady = initializeDatabase();
+  }
+  await globalForDatabase.taskDatabaseReady;
 }
 
-export function findTask(id) {
-  return taskFromRow(database.prepare('SELECT id, title, done FROM tasks WHERE id = ?').get(id));
+export async function listTasks() {
+  await ensureDatabase();
+  const { rows } = await pool.query('SELECT id, title, done FROM tasks ORDER BY id');
+  return rows;
 }
 
-export function createTask(title) {
-  const result = database.prepare('INSERT INTO tasks (title, done) VALUES (?, ?)').run(title, 0);
-  return findTask(Number(result.lastInsertRowid));
+export async function findTask(id) {
+  await ensureDatabase();
+  const { rows } = await pool.query('SELECT id, title, done FROM tasks WHERE id = $1', [id]);
+  return rows[0] ?? null;
 }
 
-export function updateTask(id, title, done) {
-  const result = database
-    .prepare('UPDATE tasks SET title = ?, done = ? WHERE id = ?')
-    .run(title, done ? 1 : 0, id);
-  return result.changes ? findTask(id) : null;
+export async function createTask(title) {
+  await ensureDatabase();
+  const { rows } = await pool.query(
+    'INSERT INTO tasks (title, done) VALUES ($1, $2) RETURNING id, title, done',
+    [title, false],
+  );
+  return rows[0];
 }
 
-export function deleteTask(id) {
-  const result = database.prepare('DELETE FROM tasks WHERE id = ?').run(id);
-  return result.changes > 0;
+export async function updateTask(id, title, done) {
+  await ensureDatabase();
+  const { rows } = await pool.query(
+    'UPDATE tasks SET title = $1, done = $2 WHERE id = $3 RETURNING id, title, done',
+    [title, done, id],
+  );
+  return rows[0] ?? null;
+}
+
+export async function deleteTask(id) {
+  await ensureDatabase();
+  const { rowCount } = await pool.query('DELETE FROM tasks WHERE id = $1', [id]);
+  return rowCount > 0;
 }
