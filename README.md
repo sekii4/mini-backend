@@ -1,19 +1,35 @@
 # Task CRUD API
 
-A small Next.js API with a SQLite-backed task list. The API exposes the same five CRUD operations while task data persists between server restarts.
+A Next.js task API backed by PostgreSQL. Docker Compose runs the API and database together, and a named volume keeps task data between container restarts.
 
-## Run locally
+## Run the stack
 
-Requires Node.js 20 or newer.
+Requires Docker Desktop with its engine running. In PowerShell, copy the environment template and set your own local `POSTGRES_PASSWORD` in `.env`:
 
-```bash
-npm install
-npm run dev
+```powershell
+Copy-Item .env.example .env
 ```
 
-The database is created automatically at `tasks.db` in the project root on the first task API request. The app creates the `tasks` table if it does not exist and inserts three example tasks only when the table is empty. The local database file is git-ignored, so a fresh clone starts with its own database.
+Then start the complete stack with:
 
-SQLite was chosen because it stores data in one local file, needs no separate database server or setup, and keeps data after the app stops.
+```bash
+docker compose up --build
+```
+
+The API is available at `http://localhost:3000`; PostgreSQL is exposed on port `5432`. Compose connects the API to the database using the service hostname `db`. The database creates the `tasks` table automatically and inserts three example tasks only when the table is empty. The `postgres_data` named volume preserves rows when containers are stopped and recreated.
+
+To test persistence, run `docker compose down` and then `docker compose up --build`; the task rows remain in the named volume. `docker compose down -v` deletes the database volume and all stored tasks; use that only when you intentionally want a fresh database.
+
+## Environment variables
+
+| Variable | Purpose | Example |
+| --- | --- | --- |
+| `POSTGRES_USER` | Database user | `tasks` |
+| `POSTGRES_PASSWORD` | Required local database password; keep in ignored `.env` | Set your own value |
+| `POSTGRES_DB` | Database name (defaults to `tasks`) | `tasks` |
+| `DATABASE_URL` | Local PostgreSQL connection string for tools outside Compose | `postgresql://tasks:password@localhost:5432/tasks` |
+
+`.env` is git-ignored. `.env.example` contains placeholders only. Compose sets the API's `DATABASE_URL` to use `db` as the hostname inside the Docker network; the localhost URL in `.env` is for tools connecting from your computer. If you change `POSTGRES_PASSWORD`, update the password in `DATABASE_URL` as well when using a local tool or running the API outside Compose.
 
 ## API
 
@@ -22,32 +38,35 @@ SQLite was chosen because it stores data in one local file, needs no separate da
 | GET | `/tasks` | 200 | Return all tasks as a JSON array |
 | GET | `/tasks/:id` | 200 | Return one task |
 | POST | `/tasks` | 201 | Create a task from `{ "title": "..." }` |
-| PUT | `/tasks/:id` | 200 | Replace a task using `{ "title": "...", "done": true }` |
-| DELETE | `/tasks/:id` | 204 | Delete a task with an empty response body |
+| PUT | `/tasks/:id` | 200 | Update using `{ "title": "...", "done": true }` |
+| DELETE | `/tasks/:id` | 204 | Delete a task; response has no body |
 
-Task objects have the shape `{ "id": 1, "title": "...", "done": false }`. Missing or empty titles and invalid update bodies return 400. Unknown task IDs return 404 with `{ "error": "Task not found" }`. All values supplied by requests are passed to prepared SQL statements as parameters.
+Tasks have the shape `{ "id": 1, "title": "...", "done": false }`. Invalid or empty titles and invalid update bodies return 400. Unknown IDs return 404 with `{ "error": "Task not found" }`. Database values use parameterized PostgreSQL queries.
 
-On Windows PowerShell, use `curl.exe` to avoid the `curl` alias. For example:
+Example request:
 
 ```bash
-curl.exe -i http://localhost:3000/tasks
-curl.exe -i http://localhost:3000/tasks/1
-curl.exe -i -X POST http://localhost:3000/tasks -H "Content-Type: application/json" -d "{\"title\":\"Write SQL\"}"
-curl.exe -i -X PUT http://localhost:3000/tasks/1 -H "Content-Type: application/json" -d "{\"title\":\"Write SQL\",\"done\":true}"
-curl.exe -i -X DELETE http://localhost:3000/tasks/1
-curl.exe -i http://localhost:3000/tasks/999
+curl -i http://localhost:3000/tasks
 ```
 
-## Inspect SQLite
+Create a task:
 
-Open `tasks.db` in [DB Browser for SQLite](https://sqlitebrowser.org/). The database file and the API use the same rows; changes made in DB Browser are visible through the API without restarting the server.
-
-Example Stage 4 query:
-
-```sql
-SELECT id, title, done FROM tasks ORDER BY id;
+```bash
+curl -i -X POST http://localhost:3000/tasks -H "Content-Type: application/json" -d '{"title":"Review PostgreSQL"}'
 ```
 
-This returns every stored task in ID order.
+## Inspect the database
 
-**Database screenshot:** add a screenshot of `tasks.db` open in DB Browser for SQLite before submitting the assignment.
+Use a PostgreSQL client such as `psql` or a GUI such as pgAdmin, connecting to `localhost:5432` with the values in `.env`. To inspect rows using Compose:
+
+```bash
+docker compose exec db psql -U tasks -d tasks -c "SELECT id, title, done FROM tasks ORDER BY id;"
+```
+
+PostgreSQL `tasks` table and query results:
+
+![PostgreSQL tasks table showing the stored rows](docs/postgres-tasks.png)
+
+## Clean-clone check
+
+After cloning the public repository, copy `.env.example` to `.env`, set `POSTGRES_PASSWORD`, and run `docker compose up --build`. The API and database start together, and `GET /tasks` returns the three seed tasks on a fresh volume. No database server or manual schema setup is required.
