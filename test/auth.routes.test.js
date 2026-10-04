@@ -6,7 +6,7 @@ import { createAuthRouter } from '../src/auth.routes.js';
 
 const servers = new Set();
 
-async function requestWithAuth(mockAuth, path, body) {
+async function requestWithAuth(mockAuth, path, body, authorization) {
   const app = express();
   app.use(express.json());
   app.use('/auth', createAuthRouter(() => ({ auth: mockAuth })));
@@ -17,10 +17,14 @@ async function requestWithAuth(mockAuth, path, body) {
   const { port } = server.address();
 
   try {
+    const headers = {};
+    if (body !== undefined) headers['content-type'] = 'application/json';
+    if (authorization !== undefined) headers.authorization = authorization;
+
     return await fetch(`http://127.0.0.1:${port}/auth/${path}`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
+      headers,
+      body: body === undefined ? undefined : JSON.stringify(body),
     });
   } finally {
     server.close();
@@ -65,4 +69,42 @@ test('login rejects invalid credentials with the required 401 response', async (
 
   assert.equal(response.status, 401);
   assert.deepEqual(await response.json(), { error: 'Invalid login credentials' });
+});
+
+test('logout verifies the bearer token, revokes its local session, and returns 204', async () => {
+  let signedOutToken;
+  let signedOutScope;
+  const auth = {
+    getUser: async () => ({ data: { user: { id: 'user-logout' } }, error: null }),
+    admin: {
+      signOut: async (token, scope) => {
+        signedOutToken = token;
+        signedOutScope = scope;
+        return { error: null };
+      },
+    },
+  };
+  const response = await requestWithAuth(auth, 'logout', undefined, 'Bearer logout-token');
+
+  assert.equal(response.status, 204);
+  assert.equal(await response.text(), '');
+  assert.equal(signedOutToken, 'logout-token');
+  assert.equal(signedOutScope, 'local');
+});
+
+test('logout rejects missing bearer token without calling Supabase signOut', async () => {
+  let signOutCalled = false;
+  const auth = {
+    admin: {
+      signOut: async () => {
+        signOutCalled = true;
+        return { error: null };
+      },
+    },
+  };
+  const response = await requestWithAuth(auth, 'logout');
+
+  assert.equal(response.status, 401);
+  assert.deepEqual(await response.json(), { error: 'Access token required' });
+  assert.equal(signOutCalled, false);
 });

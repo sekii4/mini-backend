@@ -1,8 +1,10 @@
 import express from 'express';
 import { getSupabaseClient } from './supabase.js';
+import { createAuthMiddleware } from './auth.middleware.js';
 
 export function createAuthRouter(getClient = getSupabaseClient) {
   const router = express.Router();
+  const requireAuth = createAuthMiddleware(getClient);
 
   router.post('/signup', async (request, response) => {
     const { email, password } = request.body ?? {};
@@ -37,6 +39,16 @@ export function createAuthRouter(getClient = getSupabaseClient) {
       });
     } catch {
       return response.status(500).json({ error: 'Unable to log in' });
+    }
+  });
+
+  router.post('/logout', requireAuth, async (request, response) => {
+    try {
+      const { error } = await getClient().auth.admin.signOut(request.accessToken, 'local');
+      if (error) return response.status(500).json({ error: 'Unable to log out' });
+      return response.status(204).end();
+    } catch {
+      return response.status(500).json({ error: 'Unable to log out' });
     }
   });
 

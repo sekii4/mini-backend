@@ -82,3 +82,21 @@ test('protected profile rejects invalid or tampered tokens', async () => {
     assert.deepEqual(await response.json(), { error: 'Invalid or expired token' });
   }
 });
+
+test('dashboard is protected by the shared authentication middleware', async () => {
+  let verifiedToken;
+  const auth = {
+    getUser: async (token) => {
+      verifiedToken = token;
+      return { data: { user: { id: 'user-456' } }, error: null };
+    },
+  };
+  const response = await request('/protected/dashboard', 'Bearer valid-token', auth);
+
+  assert.equal(response.status, 200);
+  assert.equal(verifiedToken, 'valid-token');
+  assert.deepEqual(await response.json(), {
+    message: 'Welcome to your dashboard',
+    user_id: 'user-456',
+  });
+});
