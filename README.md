@@ -76,3 +76,15 @@ curl -i -X POST http://localhost:3000/enrich \
    -H "Content-Type: application/json" \
    -d '{"title":"A Sample Book"}'
 ```
+
+### Prompt v1 smoke test
+
+Three fake inputs were sent to the real OpenRouter-backed endpoint on 2026-10-04:
+
+| Input case | Observed output |
+| --- | --- |
+| `Garden Birds` with a clear field-guide description | `nonfiction`; summary reflected the supplied details; no quality flags |
+| `The Blue Door` with a vague journey description | `other`; `unclear_category` and `sparse_description` |
+| `Quiet Star` with a null description | `other`; `missing_description` and `unclear_category` |
+
+All three responses returned `200` and matched the closed output schema. The missing-description result did not infer a category from the title, which is the intended conservative behavior.

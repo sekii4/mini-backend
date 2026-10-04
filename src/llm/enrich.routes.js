@@ -1,5 +1,6 @@
 import express from 'express';
 import { enrichInputSchema, enrichOutputSchema } from './schema.js';
+import { enrichBookWithModel } from './model.js';
 
 function stubEnrichment(input) {
   const missingDescription = input.description === null || input.description.trim() === '';
@@ -14,7 +15,10 @@ function stubEnrichment(input) {
   return enrichOutputSchema.parse(output);
 }
 
-export function createEnrichRouter({ isStub = () => process.env.LLM_STUB === '1', modelCall } = {}) {
+export function createEnrichRouter({
+  isStub = () => process.env.LLM_STUB === '1',
+  modelCall = enrichBookWithModel,
+} = {}) {
   const router = express.Router();
 
   router.post('/enrich', async (request, response) => {
@@ -26,10 +30,6 @@ export function createEnrichRouter({ isStub = () => process.env.LLM_STUB === '1'
 
     if (isStub()) {
       return response.status(200).json(stubEnrichment(inputResult.data));
-    }
-
-    if (!modelCall) {
-      return response.status(503).json({ error: 'Model endpoint is not configured yet' });
     }
 
     try {
