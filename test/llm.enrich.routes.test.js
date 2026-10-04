@@ -160,3 +160,30 @@ test('enrich quarantines the failed repair and returns 422 without raw model tex
   assert.equal(quarantined.raw_model_output, rawOutput);
   assert.match(quarantined.repair_model_output, /invalid-category/);
 });
+
+test('LLM_ENABLED=false returns 503 without calling the model', async () => {
+  let modelCalls = 0;
+  const response = await request({ title: 'A Sample Book', description: 'A short description.' }, {
+    isStub: () => false,
+    isEnabled: () => false,
+    modelCall: async () => {
+      modelCalls += 1;
+      return '{}';
+    },
+  });
+
+  assert.equal(response.status, 503);
+  assert.deepEqual(await response.json(), { error: 'LLM is disabled' });
+  assert.equal(modelCalls, 0);
+});
+
+test('model timeout maps to 504', async () => {
+  const { ModelTimeoutError } = await import('../src/llm/model.js');
+  const response = await request({ title: 'A Sample Book', description: 'A short description.' }, {
+    isStub: () => false,
+    modelCall: async () => { throw new ModelTimeoutError(); },
+  });
+
+  assert.equal(response.status, 504);
+  assert.deepEqual(await response.json(), { error: 'Model request timed out' });
+});

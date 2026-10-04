@@ -1,6 +1,11 @@
 import express from 'express';
 import { enrichInputSchema, enrichOutputSchema } from './schema.js';
-import { enrichBookWithModel, promptVersion, repairBookEnrichment } from './model.js';
+import {
+  enrichBookWithModel,
+  isTimeoutError,
+  promptVersion,
+  repairBookEnrichment,
+} from './model.js';
 import { writeQuarantineEntry } from './quarantine.js';
 
 function parseModelJson(rawOutput) {
@@ -53,6 +58,7 @@ function stubEnrichment(input) {
 
 export function createEnrichRouter({
   isStub = () => process.env.LLM_STUB === '1',
+  isEnabled = () => process.env.LLM_ENABLED?.toLowerCase() !== 'false',
   modelCall = enrichBookWithModel,
   repairCall = repairBookEnrichment,
   quarantine = writeQuarantineEntry,
@@ -70,6 +76,10 @@ export function createEnrichRouter({
       return response.status(200).json(stubEnrichment(inputResult.data));
     }
 
+    if (!isEnabled()) {
+      return response.status(503).json({ error: 'LLM is disabled' });
+    }
+
     try {
       const originalInput = inputResult.data;
       const originalOutput = await modelCall(originalInput);
@@ -80,6 +90,7 @@ export function createEnrichRouter({
 
       let repairedOutput;
       let repairError;
+      let repairTimedOut = false;
       try {
         repairedOutput = await repairCall({
           input: originalInput,
@@ -88,6 +99,7 @@ export function createEnrichRouter({
         });
       } catch (error) {
         repairError = `Repair request failed: ${error.message}`;
+        repairTimedOut = isTimeoutError(error);
       }
 
       const repairedValidation = repairError
@@ -108,11 +120,20 @@ export function createEnrichRouter({
           console.error(`Unable to quarantine failed model response: ${error.message}`);
         }
 
+        if (repairTimedOut) {
+          return response.status(504).json({ error: 'Model repair request timed out' });
+        }
         return response.status(422).json({ error: 'Model response could not be validated after one repair attempt' });
       }
 
       return response.status(200).json(repairedValidation.data);
-    } catch {
+    } catch (error) {
+      if (isTimeoutError(error)) {
+        return response.status(504).json({ error: 'Model request timed out' });
+      }
+      if (error.status === 401 || error.status === 403) {
+        return response.status(502).json({ error: 'LLM provider rejected the configured credentials' });
+      }
       return response.status(502).json({ error: 'Model request failed' });
     }
   });

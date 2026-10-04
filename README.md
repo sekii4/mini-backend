@@ -88,3 +88,10 @@ Three fake inputs were sent to the real OpenRouter-backed endpoint on 2026-10-04
 | `Quiet Star` with a null description | `other`; `missing_description` and `unclear_category` |
 
 All three responses returned `200` and matched the closed output schema. The missing-description result did not infer a category from the title, which is the intended conservative behavior.
+
+## LLM reliability controls
+
+- Set `LLM_ENABLED=false` to return `503` without making a model call. `LLM_STUB=1` remains available for deterministic development responses.
+- Each model request has a 30-second timeout; exhausted timeouts return `504`.
+- The OpenAI SDK's automatic retries are disabled (`maxRetries: 0`). The application retries only timeouts, `429`, and `5xx`, at most three times, using exponential delays of 1, 2, and 4 seconds plus jitter. A valid `Retry-After` header takes precedence. `400`, `401`, and `403` are not retried.
+- Each model attempt emits a structured JSON log with prompt version, model, input/output token counts, duration, and whether it was a repair call.
