@@ -4,17 +4,39 @@ import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import * as cheerio from 'cheerio';
+import { z } from 'zod';
 
 const target = new URL('https://books.toscrape.com/');
 const cataloguePageLimit = 3;
 const scraperDirectory = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const cacheDirectory = path.join(scraperDirectory, 'cache');
+const outputDirectory = path.join(scraperDirectory, 'output');
+const booksOutputFile = path.join(outputDirectory, 'books.json');
+const errorsOutputFile = path.join(outputDirectory, 'errors.json');
 const userAgent = 'FlyRankInternship-A9/1.0 (+https://github.com/sekii4/mini-backend)';
 const requestTimeoutMs = 10_000;
 const minimumRequestIntervalMs = 500;
 let lastNetworkRequestAt;
 let detailFetches = 0;
 let detailCacheHits = 0;
+
+const httpsUrlSchema = z.string().url().refine((value) => new URL(value).protocol === 'https:', {
+  message: 'URL must use HTTPS',
+});
+
+const bookSchema = z.object({
+  title: z.string().trim().min(1),
+  product_url: httpsUrlSchema,
+  price_text: z.string().trim().min(1),
+  price_gbp: z.number().finite().nonnegative(),
+  availability_text: z.string().trim().min(1),
+  rating_text: z.string().trim().min(1),
+  description: z.string().nullable().optional(),
+  source_page: httpsUrlSchema,
+  fetched_at: z.string().refine((value) => Number.isFinite(Date.parse(value)), {
+    message: 'Timestamp must be a valid date-time',
+  }),
+}).strict();
 
 async function waitForRequestSlot() {
   if (lastNetworkRequestAt !== undefined) {
@@ -100,6 +122,50 @@ function extractRawBook(html, productUrl, sourcePage, fetchedAt) {
   };
 }
 
+function normalizeBook(rawRecord) {
+  const priceMatch = rawRecord.price_text.match(/^£\s*(\d+(?:\.\d{1,2})?)$/);
+  return {
+    ...rawRecord,
+    price_gbp: priceMatch ? Number(priceMatch[1]) : Number.NaN,
+  };
+}
+
+function validationReason(error) {
+  return error.issues
+    .map((issue) => `${issue.path.join('.') || 'record'}: ${issue.message}`)
+    .join('; ');
+}
+
+async function saveValidatedRecords(rawRecords) {
+  const validBooks = new Map();
+  const invalidBooks = [];
+
+  for (const rawRecord of rawRecords) {
+    const normalized = normalizeBook(rawRecord);
+    const result = bookSchema.safeParse(normalized);
+    if (!result.success) {
+      invalidBooks.push({
+        product_url: rawRecord.product_url,
+        reason: validationReason(result.error),
+        record: normalized,
+      });
+      continue;
+    }
+
+    if (!validBooks.has(result.data.product_url)) {
+      validBooks.set(result.data.product_url, result.data);
+    }
+  }
+
+  await mkdir(outputDirectory, { recursive: true });
+  const books = [...validBooks.values()];
+  await writeFile(booksOutputFile, `${JSON.stringify(books, null, 2)}\n`, 'utf8');
+  await writeFile(errorsOutputFile, `${JSON.stringify(invalidBooks, null, 2)}\n`, 'utf8');
+
+  console.log(`valid_records=${books.length}`);
+  console.log(`invalid_records=${invalidBooks.length}`);
+}
+
 async function discoverBooks() {
   let catalogueUrl = target;
   const cataloguePages = [];
@@ -151,6 +217,7 @@ try {
   console.log(`detail_pages=${rawRecords.length}`);
   console.log(`detail_fetches=${detailFetches}`);
   console.log(`detail_cache_hits=${detailCacheHits}`);
+  await saveValidatedRecords(rawRecords);
 } catch (error) {
   console.error(`Unable to process catalogue books: ${error.message}`);
   process.exitCode = 1;
