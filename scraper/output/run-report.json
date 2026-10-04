@@ -1,12 +1,10 @@
 {
-  "started_at": "2026-10-04T14:55:36.614Z",
-  "duration_ms": 754,
+  "started_at": "2026-10-04T14:58:14.741Z",
+  "duration_ms": 300,
   "pages_fetched": 0,
   "cache_hits": 63,
   "valid_records": 60,
   "invalid_records": 0,
-  "failed_pages": 1,
-  "failed_page_urls": [
-    "https://books.toscrape.com/catalogue/a9-stage5-deliberate-404.html"
-  ]
+  "failed_pages": 0,
+  "failed_page_urls": []
 }
