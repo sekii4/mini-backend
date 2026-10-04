@@ -1,4 +1,5 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
@@ -12,6 +13,16 @@ const userAgent = 'FlyRankInternship-A9/1.0 (+https://github.com/sekii4/mini-bac
 const requestTimeoutMs = 10_000;
 const minimumRequestIntervalMs = 500;
 let lastNetworkRequestAt;
+let detailFetches = 0;
+let detailCacheHits = 0;
+
+async function waitForRequestSlot() {
+  if (lastNetworkRequestAt !== undefined) {
+    const waitMs = minimumRequestIntervalMs - (Date.now() - lastNetworkRequestAt);
+    if (waitMs > 0) await delay(waitMs);
+  }
+  lastNetworkRequestAt = Date.now();
+}
 
 async function loadCataloguePage(url, pageNumber) {
   const cacheFile = path.join(cacheDirectory, `catalogue-page-${pageNumber}.html`);
@@ -23,12 +34,7 @@ async function loadCataloguePage(url, pageNumber) {
     if (error.code !== 'ENOENT') throw error;
   }
 
-  if (lastNetworkRequestAt !== undefined) {
-    const waitMs = minimumRequestIntervalMs - (Date.now() - lastNetworkRequestAt);
-    if (waitMs > 0) await delay(waitMs);
-  }
-
-  lastNetworkRequestAt = Date.now();
+  await waitForRequestSlot();
   const response = await fetch(url, {
     redirect: 'follow',
     headers: { 'user-agent': userAgent },
@@ -46,10 +52,58 @@ async function loadCataloguePage(url, pageNumber) {
   return html;
 }
 
+async function loadBookPage(productUrl) {
+  const cacheKey = createHash('sha256').update(productUrl).digest('hex');
+  const cacheFile = path.join(cacheDirectory, 'books', `${cacheKey}.html`);
+
+  try {
+    const [html, metadata] = await Promise.all([readFile(cacheFile, 'utf8'), stat(cacheFile)]);
+    detailCacheHits += 1;
+    return { html, fetchedAt: metadata.mtime.toISOString() };
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+  }
+
+  await waitForRequestSlot();
+  const response = await fetch(productUrl, {
+    headers: { 'user-agent': userAgent },
+    signal: AbortSignal.timeout(requestTimeoutMs),
+  });
+
+  if (response.status !== 200) {
+    throw new Error(`Book detail fetch failed with HTTP ${response.status}: ${productUrl}`);
+  }
+
+  const html = await response.text();
+  const fetchedAt = new Date().toISOString();
+  await mkdir(path.dirname(cacheFile), { recursive: true });
+  await writeFile(cacheFile, html, 'utf8');
+  detailFetches += 1;
+  return { html, fetchedAt };
+}
+
+function extractRawBook(html, productUrl, sourcePage, fetchedAt) {
+  const $ = cheerio.load(html);
+  const productArea = $('article.product_page');
+  const ratingClasses = productArea.find('.product_main .star-rating').attr('class')?.split(/\s+/) ?? [];
+  const description = productArea.find('#product_description').next('p').text().trim();
+
+  return {
+    title: productArea.find('.product_main h1').text().trim(),
+    product_url: productUrl,
+    price_text: productArea.find('.product_main .price_color').text().trim(),
+    availability_text: productArea.find('.product_main .availability').text().replace(/\s+/g, ' ').trim(),
+    rating_text: ratingClasses.find((className) => className !== 'star-rating') ?? '',
+    description: description || null,
+    source_page: sourcePage,
+    fetched_at: fetchedAt,
+  };
+}
+
 async function discoverBooks() {
   let catalogueUrl = target;
   const cataloguePages = [];
-  const productUrls = new Set();
+  const productUrls = new Map();
   let discovered = 0;
 
   for (let pageNumber = 1; pageNumber <= cataloguePageLimit; pageNumber += 1) {
@@ -61,7 +115,10 @@ async function discoverBooks() {
       const productUrl = new URL(href, catalogueUrl);
       if (productUrl.origin === target.origin) {
         discovered += 1;
-        productUrls.add(productUrl.href);
+        const sourcePage = pageNumber === 1
+          ? new URL('catalogue/page-1.html', target).href
+          : catalogueUrl.href;
+        if (!productUrls.has(productUrl.href)) productUrls.set(productUrl.href, sourcePage);
       }
     });
 
@@ -77,11 +134,24 @@ async function discoverBooks() {
   console.log(`catalogue_pages=${cataloguePages.length}`);
   console.log(`discovered=${discovered}`);
   console.log(`unique_urls=${productUrls.size}`);
+
+  return productUrls;
 }
 
 try {
-  await discoverBooks();
+  const books = await discoverBooks();
+  const rawRecords = [];
+
+  for (const [productUrl, sourcePage] of books) {
+    const { html, fetchedAt } = await loadBookPage(productUrl);
+    rawRecords.push(extractRawBook(html, productUrl, sourcePage, fetchedAt));
+  }
+
+  if (rawRecords.length > 0) console.log(JSON.stringify(rawRecords[0], null, 2));
+  console.log(`detail_pages=${rawRecords.length}`);
+  console.log(`detail_fetches=${detailFetches}`);
+  console.log(`detail_cache_hits=${detailCacheHits}`);
 } catch (error) {
-  console.error(`Unable to discover catalogue books: ${error.message}`);
+  console.error(`Unable to process catalogue books: ${error.message}`);
   process.exitCode = 1;
 }
