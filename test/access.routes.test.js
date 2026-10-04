@@ -6,9 +6,9 @@ import { createAccessRouter } from '../src/access.routes.js';
 
 const servers = new Set();
 
-async function request(path, authorization) {
+async function request(path, authorization, auth = {}) {
   const app = express();
-  app.use(createAccessRouter());
+  app.use(createAccessRouter(() => ({ auth })));
 
   const server = app.listen(0);
   servers.add(server);
@@ -45,9 +45,40 @@ test('protected profile rejects missing and malformed bearer headers', async () 
   }
 });
 
-test('protected profile accepts token presence without verifying it at this stage', async () => {
-  const response = await request('/protected/profile', 'Bearer arbitrary-token');
+test('protected profile verifies the token and returns safe user metadata', async () => {
+  const user = {
+    id: 'user-123',
+    email: 'person@example.com',
+    created_at: '2026-10-04T12:00:00.000Z',
+    app_metadata: { provider: 'email' },
+    password: 'must-not-be-returned',
+  };
+  let receivedToken;
+  const auth = {
+    getUser: async (token) => {
+      receivedToken = token;
+      return { data: { user }, error: null };
+    },
+  };
+  const response = await request('/protected/profile', 'Bearer verified-token', auth);
 
   assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), { message: 'Access token provided' });
+  assert.equal(receivedToken, 'verified-token');
+  assert.deepEqual(await response.json(), {
+    id: user.id,
+    email: user.email,
+    created_at: user.created_at,
+  });
+});
+
+test('protected profile rejects invalid or tampered tokens', async () => {
+  const auth = {
+    getUser: async () => ({ data: { user: null }, error: new Error('invalid token') }),
+  };
+
+  for (const token of ['invalid-token', 'tampered-token']) {
+    const response = await request('/protected/profile', `Bearer ${token}`, auth);
+    assert.equal(response.status, 401);
+    assert.deepEqual(await response.json(), { error: 'Invalid or expired token' });
+  }
 });
