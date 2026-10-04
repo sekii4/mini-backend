@@ -9,8 +9,9 @@
     "start": "node server.js",
     "lint": "eslint",
     "test": "node --test",
-    "scrape": "node scraper/src/index.js"
-    },
+    "scrape": "node scraper/src/index.js",
+    "eval:llm": "node src/llm/evaluate.js"
+  },
   "dependencies": {
     "@supabase/supabase-js": "^2.117.2",
     "cheerio": "^1.2.0",
