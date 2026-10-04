@@ -88,12 +88,75 @@ test('enrich rejects invalid types and oversized text before a model call', asyn
   assert.equal(modelCalls, 0);
 });
 
-test('enrich rejects model output that does not match the output schema', async () => {
+test('enrich parses JSON surrounded by explanatory text and code fences', async () => {
   const response = await request({ title: 'A Sample Book', description: 'A short description.' }, {
     isStub: () => false,
-    modelCall: async () => ({ category: 'made-up', summary: 'Okay', quality_flags: [], extra: true }),
+    modelCall: async () => 'Here is the result:\n```json\n{"category":"fiction","summary":"A short fictional story.","quality_flags":[]}\n```',
   });
 
-  assert.equal(response.status, 502);
-  assert.deepEqual(await response.json(), { error: 'Model response failed schema validation' });
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    category: 'fiction',
+    summary: 'A short fictional story.',
+    quality_flags: [],
+  });
+});
+
+test('enrich performs exactly one repair with original input, broken output, and validation error', async () => {
+  const input = { title: 'A Sample Book', description: 'A short description.' };
+  const brokenOutput = '{"category":"made-up","summary":"Okay","quality_flags":[]}';
+  let modelCalls = 0;
+  let repairCalls = 0;
+  const response = await request(input, {
+    isStub: () => false,
+    modelCall: async () => {
+      modelCalls += 1;
+      return brokenOutput;
+    },
+    repairCall: async (repair) => {
+      repairCalls += 1;
+      assert.deepEqual(repair.input, input);
+      assert.equal(repair.brokenOutput, brokenOutput);
+      assert.match(repair.validationError, /Schema validation error: category:/);
+      return '{"category":"fiction","summary":"A short fictional story.","quality_flags":[]}';
+    },
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(modelCalls, 1);
+  assert.equal(repairCalls, 1);
+  assert.deepEqual(await response.json(), {
+    category: 'fiction',
+    summary: 'A short fictional story.',
+    quality_flags: [],
+  });
+});
+
+test('enrich quarantines the failed repair and returns 422 without raw model text', async () => {
+  const input = { title: 'A Sample Book', description: 'A short description.' };
+  const rawOutput = 'not json at all';
+  let repairCalls = 0;
+  let quarantined;
+  const response = await request(input, {
+    isStub: () => false,
+    modelCall: async () => rawOutput,
+    repairCall: async () => {
+      repairCalls += 1;
+      return '{"category":"invalid-category","summary":42,"quality_flags":[]}';
+    },
+    quarantine: async (entry) => {
+      quarantined = entry;
+    },
+  });
+
+  assert.equal(response.status, 422);
+  assert.equal(repairCalls, 1);
+  assert.deepEqual(await response.json(), {
+    error: 'Model response could not be validated after one repair attempt',
+  });
+  assert.deepEqual(quarantined.input, input);
+  assert.match(quarantined.error, /JSON parse error/);
+  assert.equal(quarantined.prompt_version, 'book-enrichment-v1');
+  assert.equal(quarantined.raw_model_output, rawOutput);
+  assert.match(quarantined.repair_model_output, /invalid-category/);
 });
