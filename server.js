@@ -3,6 +3,7 @@ import express from 'express';
 import swaggerUi from 'swagger-ui-express';
 import { createAccessRouter } from './src/access.routes.js';
 import { createAuthRouter } from './src/auth.routes.js';
+import { createEnrichRouter } from './src/llm/enrich.routes.js';
 import { initializeSupabase } from './src/supabase.js';
 import openApiDocument from './openapi.json' with { type: 'json' };
 
@@ -13,6 +14,7 @@ app.use(express.json());
 app.get('/openapi.json', (_request, response) => response.json(openApiDocument));
 app.use('/docs', swaggerUi.serve, swaggerUi.setup(openApiDocument));
 app.use('/auth', createAuthRouter());
+app.use(createEnrichRouter());
 app.use(createAccessRouter());
 
 app.get('/health', (_request, response) => {

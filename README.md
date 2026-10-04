@@ -56,3 +56,23 @@ To log in, send the same email/password fields to `POST /auth/login`, then use i
 Open [http://localhost:3000/docs](http://localhost:3000/docs). Use **Authorize** to paste the access token returned by login, then choose **Try it out** on `GET /protected/profile`. The OpenAPI document is also available at `/openapi.json`.
 
 ![Swagger UI showing the documented auth endpoints and bearer-protected routes](docs/swagger-ui.png)
+
+## Book enrichment endpoint
+
+`POST /enrich` accepts a book title and description, then returns a fixed category, factual short summary, and quality flags. Set `LLM_STUB=1` in the server environment to use the deterministic response during development; stub mode makes no model calls.
+
+Valid request:
+
+```bash
+curl -i -X POST http://localhost:3000/enrich \
+   -H "Content-Type: application/json" \
+   -d '{"title":"A Sample Book","description":"A short story about a family adventure."}'
+```
+
+Invalid request (missing `description`, expected `400`):
+
+```bash
+curl -i -X POST http://localhost:3000/enrich \
+   -H "Content-Type: application/json" \
+   -d '{"title":"A Sample Book"}'
+```
