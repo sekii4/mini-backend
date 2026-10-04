@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.117.2",
+    "cheerio": "^1.2.0",
     "dotenv": "^18.0.5",
     "express": "^5.2.1",
     "next": "16.2.10",
