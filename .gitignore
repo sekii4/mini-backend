@@ -12,6 +12,7 @@
 
 # testing
 /coverage
+/logs/quarantine.jsonl
 
 # local SQLite database from A2
 /tasks.db

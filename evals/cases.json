@@ -1,0 +1,66 @@
+[
+  {
+    "id": "case-1-garden-field-guide",
+    "input": {
+      "title": "Garden Birds",
+      "description": "A field guide describing common garden birds, their calls, and feeding habits."
+    },
+    "expected": { "category": "nonfiction" }
+  },
+  {
+    "id": "case-2-simple-cookbook",
+    "input": {
+      "title": "The Weeknight Kitchen",
+      "description": "A cookbook of recipes and practical cooking instructions for quick family dinners."
+    },
+    "expected": { "category": "nonfiction" }
+  },
+  {
+    "id": "case-3-poem-collection",
+    "input": {
+      "title": "Small Weather",
+      "description": "A collection of poems about rain, seasons, and life in a coastal town."
+    },
+    "expected": { "category": "poetry" }
+  },
+  {
+    "id": "case-4-childrens-bedtime-stories",
+    "input": {
+      "title": "Milo and the Moon Kite",
+      "description": "Illustrated bedtime stories for young children about a boy who makes a kite and explores the night sky."
+    },
+    "expected": { "category": "children" }
+  },
+  {
+    "id": "case-5-fantasy-novel",
+    "input": {
+      "title": "The Glass Citadel",
+      "description": "A fantasy novel following a young mapmaker through an imaginary kingdom where rivers flow uphill."
+    },
+    "expected": { "category": "fiction" }
+  },
+  {
+    "id": "case-6-historical-novel",
+    "input": {
+      "title": "Letters from Winter",
+      "description": "A historical novel about two fictional siblings separated during a winter evacuation."
+    },
+    "expected": { "category": "fiction" }
+  },
+  {
+    "id": "case-7-ambiguous-description",
+    "input": {
+      "title": "The Blue Door",
+      "description": "A door. A journey. Something changes."
+    },
+    "expected": { "category": "other" }
+  },
+  {
+    "id": "case-8-missing-description",
+    "input": {
+      "title": "Quiet Star",
+      "description": null
+    },
+    "expected": { "category": "other" }
+  }
+]
