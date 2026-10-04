@@ -1,11 +1,13 @@
 import 'dotenv/config';
 import express from 'express';
+import { createAuthRouter } from './src/auth.routes.js';
 import { initializeSupabase } from './src/supabase.js';
 
 const app = express();
 const port = Number(process.env.PORT) || 3000;
 
 app.use(express.json());
+app.use('/auth', createAuthRouter());
 
 app.get('/health', (_request, response) => {
   response.json({ status: 'ok' });
